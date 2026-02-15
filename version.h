@@ -4,7 +4,7 @@
 #define S3SS_VERSION_PATCH 2
 
 // Uncomment this as needed.
-// #define S3SS_VERSION_LABEL "rc.1"
+#define S3SS_VERSION_LABEL "unofficial-build-from-just-harry.0"
 
 #define S3SS_VERSION_COMPONENT_STRINGIZE(component) #component
 #define S3SS_VERSION_COMPONENT_STRING(component) S3SS_VERSION_COMPONENT_STRINGIZE(component)
