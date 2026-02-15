@@ -15,6 +15,7 @@
 #include "intersection_patch.h"
 #include "cpu_optimization.h"
 #include "d3d9_hook.h"
+#include "memory_statistics.h"
 #include "config/config_store.h"
 #include "config/config_value_manager.h"
 #include "config/migration.h"
@@ -608,6 +609,127 @@ void RenderUI() {
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), std::to_string(currentUsage).substr(0, 4).c_str());
 
                     if (progress > 0.9f) { ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Warning: Memory usage is very high!"); }
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::CollapsingHeader("Detailed Memory Statistics")) {
+                    DetailedMemoryReport report;
+                    uint32_t error = report.FillIn();
+
+                    if (error) { ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "VirtualQuery failed! Error-code: %u", error); }
+
+                    if (ImGui::BeginTable("pageStatistics", 4, ImGuiTableFlags_SizingFixedFit)) {
+                        ImGui::TableSetupColumn("Page Type");
+                        ImGui::TableSetupColumn("Count");
+                        ImGui::TableSetupColumn("Total Size");
+                        ImGui::TableSetupColumn("Proportion of Address Space");
+                        ImGui::TableHeadersRow();
+
+                        auto pageRow = [&](const char* label, uint32_t pageCount) __declspec(noinline) {
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text(label);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%u", pageCount);
+                            ImGui::TableNextColumn();
+                            float bytes = static_cast<float>(pageCount << pageSizeLog2);
+                            ImGui::Text("%.3f MB", bytes / 1048576.0f);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%.3f%%", bytes / addressSpace * 100.0f);
+                        };
+
+                        pageRow("Free", report.freePageCount);
+                        pageRow("Committed", report.committedPageCount);
+                        pageRow("Reserved", report.reservedPageCount);
+                        pageRow("Writeable Data", report.writeableDataPageCount);
+                        pageRow("Read-only Data", report.readOnlyDataPageCount);
+                        pageRow("Write-copy Data", report.writeCopyDataPageCount);
+                        pageRow("Inaccessible Data", report.inaccessibleDataPageCount);
+                        pageRow("Writeable Code", report.writeableCodePageCount);
+                        pageRow("Read-only Code", report.readOnlyCodePageCount);
+                        pageRow("Write-copy Code", report.writeCopyCodePageCount);
+                        pageRow("Inaccessible Code", report.inaccessibleCodePageCount);
+                        pageRow("Guard", report.guardPageCount);
+                        pageRow("Image", report.imagePageCount);
+                        pageRow("Mapped", report.mappedPageCount);
+                        pageRow("Private", report.privatePageCount);
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::Separator();
+
+                    ImGui::Text("Free Span Histogram");
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(?)");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(
+                            "This histogram aims to provide insight into the state of the game's address-space, namely: how fragmented it may be.\n"
+                            "Think of memory as a bookshelf: a shelf may have space for 3 books, but that does not guarantee that the shelf has space for 3 books in a row (without moving the books already on the shelf).\n"
+                            "In the same vein, the game having 128 MB of memory available does not guarantee that it has 128 MB of memory available _in a row_.\n\n"
+                            "The yellow bars in the histogram represent the number of regions of free-memory that can service an allocation of a given maximum size.\n"
+                            "The bright blue bars represent the number of allocations that could be serviced for a given size when including larger regions (the larger regions being the yellow bars in the following "
+                            "rows).\n"
+                            "The dark blue background represents currently-in-use memory which cannot serve allocations of any size.\n\n"
+                            "For a simple rule of thumb: you want as much bright blue as possible, and you want the yellows bar to congregate at the bottom and to stay away from the top.");
+                    }
+
+                    float scale = UISettings::Get().GetFontScale();
+
+                    float histogramWidth = ImGui::GetContentRegionAvail().x;
+                    float emHeight = ImGui::CalcTextSize("M").y;
+                    float barHeight = 24.0f * scale;
+                    float labelY = (barHeight - (barHeight <= emHeight ? barHeight : emHeight)) * 0.5f;
+                    float labelWidth = 48.0f * scale;
+                    float barWidth = histogramWidth - labelWidth;
+                    barWidth = barWidth <= 0.0f ? 0.0f : barWidth;
+                    float histogramHeight = barHeight * DetailedMemoryReport::freeSpanHistogramLevels;
+
+                    ImVec2 position = ImGui::GetCursorScreenPos();
+                    float x = position.x;
+                    float y = position.y;
+                    ImDrawList* draw = ImGui::GetWindowDrawList();
+
+                    char label[25];
+
+                    uint32_t basedLevel = DetailedMemoryReport::freeSpanHistogramBaseLog2;
+
+                    for (uint32_t level = 0; level < DetailedMemoryReport::freeSpanHistogramLevels; ++level, ++basedLevel) {
+                        uint32_t freeSpanCount = report.freeSpanHistogram[level];
+                        uint32_t possibleFreeSpanCount = addressSpace >> basedLevel;
+                        uint32_t cascadingFreeSpanCount = freeSpanCount;
+
+                        for (uint32_t upperLevel = level + 1; upperLevel < DetailedMemoryReport::freeSpanHistogramLevels; ++upperLevel) {
+                            cascadingFreeSpanCount += report.freeSpanHistogram[upperLevel] << (upperLevel - level);
+                        }
+
+                        float ry0 = y + barHeight * level;
+                        float ry1 = y + barHeight * (level + 1);
+
+                        char prefix = basedLevel < 20 ? 'K' : (basedLevel < 30 ? 'M' : 'G');
+                        uint8_t shift = basedLevel < 20 ? 10 : (basedLevel < 30 ? 20 : 30);
+                        const char* labelEnd = std::format_to(label, "{} {}B", 1U << (basedLevel - shift), prefix);
+                        draw->AddText({x, ry0 + labelY}, ImGui::GetColorU32(ImGuiCol_Text), label, labelEnd);
+
+                        float cascadingProportion = static_cast<float>(cascadingFreeSpanCount) / static_cast<float>(possibleFreeSpanCount);
+                        float proportion = static_cast<float>(freeSpanCount) / static_cast<float>(possibleFreeSpanCount);
+
+                        float bx0 = x + labelWidth;
+                        float bx1 = x + histogramWidth;
+                        draw->AddRectFilled({bx0, ry0}, {bx1, ry1}, ImGui::GetColorU32(ImGuiCol_FrameBg));
+                        draw->AddRectFilled({bx0, ry0}, {bx0 + barWidth * cascadingProportion, ry1}, ImGui::GetColorU32(ImGuiCol_FrameBgActive));
+                        draw->AddRectFilled({bx0, ry0}, {bx0 + barWidth * proportion, ry1}, ImGui::GetColorU32(ImGuiCol_PlotHistogram));
+
+                        labelEnd = std::format_to(label, "{} out of {} ({})", freeSpanCount, possibleFreeSpanCount, cascadingFreeSpanCount);
+                        ImVec2 textSize = ImGui::CalcTextSize(label, labelEnd);
+                        textSize.x = textSize.x <= barWidth ? textSize.x : barWidth;
+                        textSize.y = textSize.y <= barHeight ? textSize.y : barHeight;
+                        float tx = (barWidth - textSize.x) * 0.5f;
+                        float ty = (barHeight - textSize.y) * 0.5f;
+                        draw->AddText({bx0 + tx, ry0 + ty}, ImGui::GetColorU32(ImGuiCol_Text), label, labelEnd);
+                    }
+
+                    ImGui::SetCursorScreenPos({x, y + histogramHeight + 4.0f * scale});
                 }
 
                 ImGui::Separator();
