@@ -539,25 +539,9 @@ HMODULE GetDllModuleHandle() {
 
 DWORD WINAPI HookThread(LPVOID lpParameter) {
     try {
-        // 1. Ensure config directory exists and initialize logger
-        ConfigPaths::EnsureDirectoryExists();
-        if (!Logger::Handler::Initialize(ConfigPaths::GetLogPath())) {
-            // Fallback to Bin directory if Documents creation failed
-            if (!Logger::Handler::Initialize(Utils::GetGameFilePath("S3SS_LOG.txt"))) { OutputDebugStringA("Failed to initialize logger\n"); }
-        }
-        Logger::Handler::SetFileLogging(true);
-#ifdef _DEBUG
-        Logger::Handler::SetDebugMode(true);
-#endif
+        // Steps 1 and 2 were once here.
 
         LOG_INFO("Hook thread started");
-
-        // 2. Detect game version from PE timestamp
-        if (DetectGameVersion()) {
-            LOG_INFO(std::format("Detected game version: {} [0x{:08X}]", GetGameVersionName(), g_exeTimeDateStamp));
-        } else {
-            LOG_WARNING(std::format("Unknown game version [0x{:08X}] - patches may not work correctly", g_exeTimeDateStamp));
-        }
 
         // 3. grab CPU features
         const auto& cpuFeatures = CPUFeatures::Get();
@@ -656,14 +640,51 @@ DWORD WINAPI HookThread(LPVOID lpParameter) {
 }
 
 #include "allocator_hook.h"
+#include "critical_section_hook.h"
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     switch (reason) {
     case DLL_PROCESS_ATTACH: {
         DisableThreadLibraryCalls(hModule);
 
+        // 1. Ensure config directory exists and initialize logger
+        ConfigPaths::EnsureDirectoryExists();
+        if (!Logger::Handler::Initialize(ConfigPaths::GetLogPath())) {
+            // Fallback to Bin directory if Documents creation failed
+            if (!Logger::Handler::Initialize(Utils::GetGameFilePath("S3SS_LOG.txt"))) { OutputDebugStringA("Failed to initialize logger\n"); }
+        }
+        Logger::Handler::SetFileLogging(true);
+#ifdef _DEBUG
+        Logger::Handler::SetDebugMode(true);
+#endif
+
+        std::string tomlPath = ConfigPaths::GetConfigPath();
+        toml::table* config = nullptr;
+        toml::table configTable;
+
+        if (!tomlPath.empty()) {
+            try {
+                configTable = toml::parse_file(Utils::Utf8ToWide(tomlPath));
+                config = &configTable;
+            } catch (...) {}
+        }
+
         // Initialize allocator hooks as early as possible
-        InitializeAllocatorHooks();
+        InitializeAllocatorHooks(config);
+
+        if (config != nullptr) {
+            LOG_INFO(std::format("Detected game version: {} [0x{:08X}]", GetGameVersionName(), g_exeTimeDateStamp));
+        }
+
+        // Detect game version from PE timestamp
+        if (DetectGameVersion()) {
+            LOG_INFO(std::format("Detected game version: {} [0x{:08X}]", GetGameVersionName(), g_exeTimeDateStamp));
+        } else {
+            LOG_WARNING(std::format("Unknown game version [0x{:08X}] - patches may not work correctly", g_exeTimeDateStamp));
+        }
+
+        // Likewise, upgrade critical sections before the game uses any.
+        InitializeCriticalSectionUpgrading(config);
 
         g_hModule = hModule; // Store the module handle
 

@@ -1,10 +1,10 @@
 
 #define S3SS_VERSION_MAJOR 1
-#define S3SS_VERSION_MINOR 4
+#define S3SS_VERSION_MINOR 5
 #define S3SS_VERSION_PATCH 0
 
 // Uncomment this as needed.
-// #define S3SS_VERSION_LABEL "rc.1"
+#define S3SS_VERSION_LABEL "unofficial-critical-section-upgrading"
 
 #define S3SS_VERSION_COMPONENT_STRINGIZE(component) #component
 #define S3SS_VERSION_COMPONENT_STRING(component) S3SS_VERSION_COMPONENT_STRINGIZE(component)

@@ -97,6 +97,10 @@
     <ClCompile Include="patches\online_nuke_patch.cpp">
       <Filter>patches</Filter>
     </ClCompile>
+    <ClCompile Include="patches\critical_section_upgrade_patch.cpp">
+      <Filter>patches</Filter>
+    </ClCompile>
+    <ClCompile Include="critical_section_hook.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cpu_optimization.h" />
@@ -131,6 +135,7 @@
     <ClInclude Include="memory_statistics.h" />
     <ClInclude Include="version.h" />
     <ClInclude Include="patch_settings.h" />
+    <ClInclude Include="critical_section_hook.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="patches">

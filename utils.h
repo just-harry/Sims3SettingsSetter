@@ -66,6 +66,37 @@ inline std::vector<std::string> SplitString(const std::string& str, char delim) 
     return result;
 }
 
+template<typename Char>
+__forceinline inline Char ASCIILowerCase(Char character) {
+    Char isUpperCase = (character > '@') & (character <= 'Z');
+    return static_cast<Char>(character | (isUpperCase << 5));
+}
+
+template<typename Char>
+inline bool CaseInsensitiveASCIIEquality(const Char* a, const Char* b) {
+    for (;;)
+    {
+        Char aa = *a;
+        Char bb = *b;
+        ++a;
+        ++b;
+        bool haveA = aa != 0;
+        bool haveB = bb != 0;
+
+        if (haveA & haveB)
+        {
+            if (ASCIILowerCase(aa) == ASCIILowerCase(bb))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return haveA == haveB;
+    }
+}
+
 // Simple logger class for writing to a file
 class Logger {
   private:

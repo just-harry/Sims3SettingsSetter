@@ -87,6 +87,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/we4409 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -104,8 +105,10 @@
     <ClInclude Include="config\config_paths.h" />
     <ClInclude Include="config\config_value_manager.h" />
     <ClInclude Include="cpu_optimization.h" />
+    <ClInclude Include="critical_section_hook.h" />
     <ClInclude Include="d3d9_hook.h" />
     <ClInclude Include="d3d9_hook_registry.h" />
+    <ClInclude Include="dll_loading_notification.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="gui.h" />
     <ClInclude Include="intersection_patch.h" />
@@ -130,9 +133,11 @@
     <ClCompile Include="config\config_paths.cpp" />
     <ClCompile Include="config\config_value_manager.cpp" />
     <ClCompile Include="cpu_optimization.cpp" />
+    <ClCompile Include="critical_section_hook.cpp" />
     <ClCompile Include="d3d9_hook.cpp" />
     <ClCompile Include="d3d9_hook_registry.cpp" />
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="dll_loading_notification.cpp" />
     <ClCompile Include="gui.cpp" />
     <ClCompile Include="hooks.cpp" />
     <ClCompile Include="intersection_patch.cpp" />
@@ -140,6 +145,7 @@
     <ClCompile Include="memory_statistics.cpp" />
     <ClCompile Include="optimization.cpp" />
     <ClCompile Include="patches\adaptive_wait_patch.cpp" />
+    <ClCompile Include="patches\critical_section_upgrade_patch.cpp" />
     <ClCompile Include="patches\expanded_crash_logs_patch.cpp" />
     <ClCompile Include="patches\gc_finalize_throttle_patch.cpp" />
     <ClCompile Include="patches\gc_stop_world_patch.cpp" />

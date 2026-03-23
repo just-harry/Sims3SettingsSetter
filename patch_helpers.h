@@ -6,9 +6,11 @@
 #include <vector>
 #include <array>
 #include <cstring>
+#include <string_view>
 #include <variant>
 #include <optional>
 #include <fstream>
+#include <unordered_map>
 #include "logger.h"
 #include "settings.h"
 #include "utils.h"
@@ -521,6 +523,76 @@ inline bool Hook(HMODULE hModule, const char* dllName, const char* funcName, voi
 }
 } // namespace IATHookHelper
 } // namespace PatchHelper
+
+namespace PEHelper {
+inline IMAGE_IMPORT_DESCRIPTOR* FindDLLImportByName(uintptr_t image, IMAGE_IMPORT_DESCRIPTOR* importTable, const char* targetDLLName) {
+    auto dllImport = importTable;
+
+    for (; dllImport->OriginalFirstThunk != 0; ++dllImport) {
+        if (dllImport->Name == 0) { continue; }
+
+        const char* name = reinterpret_cast<const char*>(image + dllImport->Name);
+
+        if (Utils::CaseInsensitiveASCIIEquality(name, targetDLLName)) { return dllImport; }
+    }
+
+    return nullptr;
+}
+
+inline bool DLLImportIsBound(uintptr_t image, const IMAGE_IMPORT_DESCRIPTOR* dllImport) {
+    // According to Microsoft's documentation, `dllImport->TimeDateStamp`
+    // is set to a non-zero value when a DLL's imports are bound.
+    // This doesn't happen on my machine, so instead we'll check to see
+    // if the bound table differs from the address table.
+
+    if (dllImport->FirstThunk == 0) { return false; }
+
+    auto address = reinterpret_cast<uintptr_t*>(image + dllImport->FirstThunk);
+    auto bound = reinterpret_cast<uintptr_t*>(image + dllImport->OriginalFirstThunk);
+
+    return *bound != *address;
+}
+
+struct ImportAddressTableWalker {
+    uintptr_t imageBase;
+
+    char* NameOf(uintptr_t bound) const { return (bound & IMAGE_ORDINAL_FLAG) ? nullptr : reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(imageBase + bound)->Name; }
+
+    virtual uintptr_t Step(uintptr_t* bound, uintptr_t* address) = 0;
+};
+
+struct ImportAddressTableRemapper : public ImportAddressTableWalker {
+    std::unordered_map<std::string_view, uintptr_t> remap;
+    std::vector<PatchHelper::PatchLocation>* tracker = nullptr;
+    bool anyFailed = false;
+
+    uintptr_t Step(uintptr_t* bound, uintptr_t* address) override {
+        const char* name = NameOf(*bound);
+        if (name == nullptr) { return 0; }
+
+        auto remapping = remap.find(name);
+
+        if (remapping != remap.end()) { anyFailed |= !PatchHelper::WriteDWORD(reinterpret_cast<uintptr_t>(address), remapping->second, tracker); }
+
+        return 0;
+    }
+};
+
+inline bool WalkImportAddressTable(uintptr_t image, const IMAGE_IMPORT_DESCRIPTOR* dllImport, ImportAddressTableWalker* walker) {
+    assert(PEHelper::DLLImportIsBound(image, dllImport));
+
+    auto bound = reinterpret_cast<uintptr_t*>(image + dllImport->OriginalFirstThunk);
+    auto address = reinterpret_cast<uintptr_t*>(image + dllImport->FirstThunk);
+
+    walker->imageBase = image;
+
+    for (; (*bound != 0) & (*address != 0); ++bound, ++address) {
+        if (walker->Step(bound, address) != 0) { break; }
+    }
+
+    return true;
+}
+}
 
 // Detours helper for function hooking
 namespace DetourHelper {

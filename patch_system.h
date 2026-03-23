@@ -82,6 +82,16 @@ inline bool IsVersionSupported(GameVersionMask mask) {
     return (mask & (1 << static_cast<uint8_t>(g_gameVersion))) != 0;
 }
 
+inline uintptr_t GetGameImportTableAddress(uintptr_t image) {
+    if (g_gameVersion == GameVersion::EA) {
+        return 0x01196a94;
+    } else {
+        const auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+        const auto pe = reinterpret_cast<const IMAGE_NT_HEADERS*>(image + dos->e_lfanew);
+        return image + pe->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    }
+}
+
 // Metadata for patch description and categorization
 struct PatchMetadata {
     std::string displayName;

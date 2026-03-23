@@ -17,8 +17,6 @@
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "dbghelp.lib")
 #include "logger.h"
-#include <toml++/toml.hpp>
-#include <filesystem>
 //https://www.youtube.com/watch?v=M7g8YY0FZfU
 bool g_mimallocActive = false;
 
@@ -131,17 +129,11 @@ void* __cdecl SafeRecalloc(void* p, size_t count, size_t size) {
 
 // Helper to check if hooks should be enabled from config.
 // Runs at DLL_PROCESS_ATTACH, before HookThread, so we parse the TOML/INI directly without going through ConfigStore or other singletons.
-bool ShouldEnableAllocatorHooks() {
+bool ShouldEnableAllocatorHooks(const toml::table* config) {
     // Try new TOML path first
-    std::string tomlPath = ConfigPaths::GetConfigPath();
-    if (!tomlPath.empty() && std::filesystem::exists(Utils::ToPath(tomlPath))) {
-        try {
-            toml::table root = toml::parse_file(Utils::Utf8ToWide(tomlPath));
-            auto enabled = root["patches"]["Mimalloc"]["enabled"].value<bool>();
-            if (enabled.has_value()) { return enabled.value(); }
-        } catch (...) {
-            // Parse error - fall through to INI fallback
-        }
+    if (config != nullptr) {
+        auto enabled = (*config)["patches"]["Mimalloc"]["enabled"].value<bool>();
+        if (enabled.has_value()) { return enabled.value(); }
     }
 
     // Fall back to old INI path (first-run-after-update, before migration runs)
@@ -182,8 +174,8 @@ bool ShouldEnableAllocatorHooks() {
     return false;
 }
 
-void InitializeAllocatorHooks() {
-    if (!ShouldEnableAllocatorHooks()) {
+void InitializeAllocatorHooks(const toml::table* config) {
+    if (!ShouldEnableAllocatorHooks(config)) {
         LOG_INFO("Allocator hooks disabled via config.");
         return;
     }
